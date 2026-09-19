@@ -1,0 +1,12 @@
+# logi i kopie zapasowe
+*.log
+*.backup*
+
+# stara wersja robocza z glownego folderu (sciezki na sztywno, przestarzale zadanie harmonogramu);
+# aktualne skrypty sa w setup/src/payload
+/mic-watcher.ps1
+/steam-recording-mic.ps1
+/games.txt
+/mic-watcher-uruchom.vbs
+/zainstaluj-autostart.ps1
+/odinstaluj-autostart.ps1
