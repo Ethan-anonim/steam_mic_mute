@@ -9,13 +9,15 @@ using System.Threading;
 using Microsoft.Win32;
 
 // Installer: Steam Mic Auto (toggles "Record Microphone" in Steam Game Recording while listed games run).
-// Arguments: --uninstall | --silent | --dir <path> | --files-only | --create-flag <file> (internal)
+// Arguments: --uninstall | --silent | --dir <path> | --games-dir <folder or .txt file> | --files-only | --create-flag <file> (internal)
 static class Program
 {
     const string StartupFileName = "SteamMicAuto.vbs";
     const string LegacyStartupFileName = "mic-watcher-uruchom.vbs";
     const string FlagFileName = ".cef-enable-remote-debugging";
     const string WatcherScript = "mic-watcher.ps1";
+    const string GamesFileName = "games.txt";
+    const string GamesArgMarker = "-GamesFile \"\"";
 
     static bool silent;
 
@@ -32,7 +34,7 @@ static class Program
     static int Main(string[] args)
     {
         bool uninstall = false, filesOnly = false;
-        string dirArg = null, createFlag = null;
+        string dirArg = null, gamesDirArg = null, createFlag = null;
         for (int i = 0; i < args.Length; i++)
         {
             string a = args[i].ToLowerInvariant();
@@ -40,6 +42,7 @@ static class Program
             else if (a == "--silent") silent = true;
             else if (a == "--files-only") filesOnly = true;
             else if (a == "--dir" && i + 1 < args.Length) dirArg = args[++i];
+            else if (a == "--games-dir" && i + 1 < args.Length) gamesDirArg = args[++i];
             else if (a == "--create-flag" && i + 1 < args.Length) createFlag = args[++i];
         }
 
@@ -55,7 +58,7 @@ static class Program
 
         Console.Title = "Steam Mic Auto - " + (uninstall ? "uninstall" : "setup");
         int code;
-        try { code = uninstall ? Uninstall(installDir) : Install(installDir, filesOnly); }
+        try { code = uninstall ? Uninstall(installDir) : Install(installDir, gamesDirArg, filesOnly); }
         catch (Exception ex)
         {
             Console.WriteLine();
@@ -66,7 +69,7 @@ static class Program
         return code;
     }
 
-    static int Install(string installDir, bool filesOnly)
+    static int Install(string installDir, string gamesDirArg, bool filesOnly)
     {
         Console.WriteLine("=== Steam Mic Auto - setup ===");
         Console.WriteLine();
@@ -79,13 +82,20 @@ static class Program
         }
         Console.WriteLine("[OK] Steam:          " + steamDir);
         Console.WriteLine("[OK] Install folder: " + installDir);
+        Console.WriteLine();
+
+        string startupDir = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+        string startupFile = Path.Combine(startupDir, StartupFileName);
+        string existingGames = FindExistingGamesFile(installDir, startupFile);
+        string gamesPath = ChooseGamesPath(installDir, gamesDirArg, existingGames);
+        Console.WriteLine();
 
         Directory.CreateDirectory(installDir);
         ExtractResource("payload.mic-watcher.ps1", Path.Combine(installDir, WatcherScript));
         ExtractResource("payload.steam-recording-mic.ps1", Path.Combine(installDir, "steam-recording-mic.ps1"));
-        string gamesPath = Path.Combine(installDir, "games.txt");
-        if (!File.Exists(gamesPath)) File.WriteAllText(gamesPath, DefaultGames, new UTF8Encoding(false));
-        Console.WriteLine("[OK] Scripts installed (game list: " + gamesPath + ")");
+        Console.WriteLine("[OK] Scripts installed");
+
+        PrepareGamesFile(gamesPath, existingGames, Path.Combine(installDir, GamesFileName));
 
         string flagPath = Path.Combine(steamDir, FlagFileName);
         if (!EnsureFlag(flagPath))
@@ -106,7 +116,6 @@ static class Program
         int killed = StopWatchers();
         if (killed > 0) Console.WriteLine("[OK] Stopped previously running watchers: " + killed);
 
-        string startupDir = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
         string legacy = Path.Combine(startupDir, LegacyStartupFileName);
         if (File.Exists(legacy) && File.ReadAllText(legacy).IndexOf(WatcherScript, StringComparison.OrdinalIgnoreCase) >= 0)
         {
@@ -114,11 +123,11 @@ static class Program
             Console.WriteLine("[OK] Removed old autostart entry (" + LegacyStartupFileName + ") - replaced by the new one");
         }
 
-        string startupFile = Path.Combine(startupDir, StartupFileName);
         string ps1 = Path.Combine(installDir, WatcherScript);
         File.WriteAllText(startupFile,
             "Set sh = CreateObject(\"WScript.Shell\")\r\n" +
-            "sh.Run \"powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"\"" + ps1 + "\"\"\", 0, False\r\n",
+            "sh.Run \"powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"\"" + ps1 + "\"\" " +
+            GamesArgMarker + gamesPath + "\"\"\", 0, False\r\n",
             Encoding.ASCII);
         Console.WriteLine("[OK] Autostart added: " + startupFile);
 
@@ -129,7 +138,7 @@ static class Program
         EnsureSteamDebugPort(steamDir);
 
         Console.WriteLine();
-        Console.WriteLine("Done. Check your game list: " + gamesPath);
+        Console.WriteLine("Done. Your game list: " + gamesPath);
         if (Ask("Open the game list in Notepad?", true))
             Process.Start(new ProcessStartInfo("notepad.exe", "\"" + gamesPath + "\"") { UseShellExecute = false });
         return 0;
@@ -140,17 +149,21 @@ static class Program
         Console.WriteLine("=== Steam Mic Auto - uninstall ===");
         Console.WriteLine();
 
+        string startupFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), StartupFileName);
+        string gamesPath = FindExistingGamesFile(installDir, startupFile);
+
         int killed = StopWatchers();
         Console.WriteLine("[OK] Stopped watchers: " + killed);
 
-        string startupFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), StartupFileName);
         if (File.Exists(startupFile)) { File.Delete(startupFile); Console.WriteLine("[OK] Removed autostart entry"); }
 
+        bool gamesOutside = gamesPath != null && File.Exists(gamesPath) && !IsInside(gamesPath, installDir);
         if (Directory.Exists(installDir))
         {
             try { Directory.Delete(installDir, true); Console.WriteLine("[OK] Removed folder " + installDir); }
             catch (Exception ex) { Console.WriteLine("[!] Could not remove " + installDir + ": " + ex.Message); }
         }
+        if (gamesOutside) Console.WriteLine("[i] Your game list was left in place: " + gamesPath);
 
         string steamDir = FindSteamDir();
         if (steamDir != null)
@@ -168,6 +181,96 @@ static class Program
         Console.WriteLine();
         Console.WriteLine("Note: the Record Microphone toggle in Steam stays in whatever state it was last set to.");
         return 0;
+    }
+
+    // Path of the game list used by a previous install (from the autostart entry, else the default location).
+    static string FindExistingGamesFile(string installDir, string startupFile)
+    {
+        try
+        {
+            if (File.Exists(startupFile))
+            {
+                string text = File.ReadAllText(startupFile);
+                int i = text.IndexOf(GamesArgMarker, StringComparison.Ordinal);
+                if (i >= 0)
+                {
+                    int start = i + GamesArgMarker.Length;
+                    int end = text.IndexOf("\"\"", start, StringComparison.Ordinal);
+                    if (end > start) return text.Substring(start, end - start);
+                }
+            }
+        }
+        catch { }
+        string def = Path.Combine(installDir, GamesFileName);
+        return File.Exists(def) ? def : null;
+    }
+
+    static string ChooseGamesPath(string installDir, string gamesDirArg, string existing)
+    {
+        if (gamesDirArg != null) return ToGamesFile(gamesDirArg);
+
+        string installDefault = Path.Combine(installDir, GamesFileName);
+        if (silent) return existing ?? installDefault;
+
+        string docs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "SteamMicAuto", GamesFileName);
+        string desktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "SteamMicAuto-games.txt");
+
+        Console.WriteLine("Where should the game list (games.txt) be stored?");
+        Console.WriteLine("  [1] " + docs);
+        Console.WriteLine("  [2] " + desktop);
+        Console.WriteLine("  [3] " + installDefault);
+        Console.WriteLine("  [4] Custom folder or file...");
+        if (existing != null) Console.WriteLine("  [Enter] Keep current: " + existing);
+        Console.Write("Choice" + (existing == null ? " [1]" : "") + ": ");
+
+        string answer = (Console.ReadLine() ?? "").Trim();
+        if (answer == "" ) return existing ?? docs;
+        if (answer == "1") return docs;
+        if (answer == "2") return desktop;
+        if (answer == "3") return installDefault;
+        if (answer == "4")
+        {
+            Console.Write("Folder (or full path to a .txt file): ");
+            string custom = (Console.ReadLine() ?? "").Trim();
+            if (custom != "") return ToGamesFile(custom);
+        }
+        Console.WriteLine("[i] Unrecognized choice - using " + (existing ?? docs));
+        return existing ?? docs;
+    }
+
+    static string ToGamesFile(string path)
+    {
+        string p = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
+        p = Path.GetFullPath(p);
+        return p.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) ? p : Path.Combine(p, GamesFileName);
+    }
+
+    static void PrepareGamesFile(string gamesPath, string existing, string installDefault)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(gamesPath));
+        if (!File.Exists(gamesPath))
+        {
+            if (existing != null && File.Exists(existing) && !SamePath(existing, gamesPath))
+            {
+                File.Copy(existing, gamesPath);
+                Console.WriteLine("[OK] Game list moved to: " + gamesPath);
+                if (SamePath(existing, installDefault)) File.Delete(existing);
+                return;
+            }
+            File.WriteAllText(gamesPath, DefaultGames, new UTF8Encoding(false));
+        }
+        Console.WriteLine("[OK] Game list: " + gamesPath);
+    }
+
+    static bool SamePath(string a, string b)
+    {
+        return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool IsInside(string file, string dir)
+    {
+        string d = Path.GetFullPath(dir).TrimEnd('\\') + "\\";
+        return Path.GetFullPath(file).StartsWith(d, StringComparison.OrdinalIgnoreCase);
     }
 
     static bool EnsureFlag(string flagPath)

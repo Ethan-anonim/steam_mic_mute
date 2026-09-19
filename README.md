@@ -21,7 +21,8 @@ Steam only has one global toggle for recording the microphone (Settings → Game
    - installs the scripts to `%LOCALAPPDATA%\SteamMicAuto`,
    - adds autostart (Startup folder) and starts the program in the background,
    - offers to restart Steam if it was running without debugging enabled (it will not work without a restart).
-3. Add your games to `%LOCALAPPDATA%\SteamMicAuto\games.txt` (the installer offers to open the file).
+3. Choose where to keep your game list (`games.txt`): Documents, Desktop, the install folder, or any custom folder. The program adapts to your choice, and a list from a previous install is moved there automatically.
+4. Add your games to the list (the installer offers to open it).
 
 ### Game list
 
@@ -41,7 +42,9 @@ setup.exe --uninstall
 
 Stops the program, removes autostart and the files, and can optionally disable Steam remote debugging too (the Record Microphone toggle stays in its last state).
 
-Other arguments: `--silent` (no prompts), `--dir <path>` (different install folder), `--files-only` (only extract files, no autostart or launch).
+Your game list is left in place if it is outside the install folder.
+
+Other arguments: `--silent` (no prompts), `--dir <path>` (different install folder), `--games-dir <folder or .txt file>` (game list location, skips the question), `--files-only` (only extract files, no autostart or launch).
 
 ## How it works
 

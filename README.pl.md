@@ -20,7 +20,8 @@ Steam ma tylko jeden globalny przełącznik nagrywania mikrofonu (Ustawienia →
    - zainstaluje skrypty do `%LOCALAPPDATA%\SteamMicAuto`,
    - doda autostart (folder Uruchamianie) i od razu uruchomi program w tle,
    - zapyta o restart Steama, jeśli działał bez włączonego debugowania (bez restartu nie będzie działać).
-3. Dopisz swoje gry do `%LOCALAPPDATA%\SteamMicAuto\games.txt` (instalator proponuje otwarcie pliku).
+3. Wybierz, gdzie trzymać listę gier (`games.txt`): Dokumenty, Pulpit, folder instalacji albo dowolny własny folder. Program dostosowuje się do wyboru, a lista z poprzedniej instalacji jest tam automatycznie przenoszona.
+4. Dopisz swoje gry do listy (instalator proponuje jej otwarcie).
 
 ### Lista gier
 
@@ -40,7 +41,9 @@ setup.exe --uninstall
 
 Zatrzymuje program, usuwa autostart i pliki, a na pytanie może też wyłączyć zdalne debugowanie Steama (przełącznik Record Microphone zostaje w ostatnim stanie).
 
-Inne argumenty: `--silent` (bez pytań), `--dir <ścieżka>` (inny folder instalacji), `--files-only` (tylko wypakuj pliki, bez autostartu i uruchamiania).
+Lista gier zostaje na miejscu, jeśli leży poza folderem instalacji.
+
+Inne argumenty: `--silent` (bez pytań), `--dir <ścieżka>` (inny folder instalacji), `--games-dir <folder lub plik .txt>` (miejsce listy gier, pomija pytanie), `--files-only` (tylko wypakuj pliki, bez autostartu i uruchamiania).
 
 ## Jak to działa
 

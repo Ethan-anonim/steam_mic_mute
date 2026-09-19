@@ -2,13 +2,15 @@
 # and OFF when none is. Does not touch the Windows microphone or Discord.
 # Runs in a loop in the background (autostart via the Startup folder, see setup.exe).
 
+param([string]$GamesFile)
+
 $ErrorActionPreference = 'SilentlyContinue'
 
 $singleInstance = New-Object System.Threading.Mutex($false, 'Local\SteamMicAutoWatcher')
 if (-not $singleInstance.WaitOne(0)) { exit }
 
 $scriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
-$configPath = Join-Path $scriptDir 'games.txt'
+$configPath = if ($GamesFile) { $GamesFile } else { Join-Path $scriptDir 'games.txt' }
 $logPath    = Join-Path $scriptDir 'mic-watcher.log'
 
 . (Join-Path $scriptDir 'steam-recording-mic.ps1')
@@ -21,7 +23,7 @@ function Write-Log([string]$message) {
     }
 }
 
-Write-Log "=== mic-watcher started (controlling: Steam Record Microphone) ==="
+Write-Log "=== mic-watcher started (controlling: Steam Record Microphone; game list: $configPath) ==="
 
 $applied = $null      # last state successfully applied in Steam
 $failLogged = $false
