@@ -8,8 +8,8 @@ using System.Text;
 using System.Threading;
 using Microsoft.Win32;
 
-// Instalator: Steam Mic Auto (przelacza "Record Microphone" w Steam Game Recording razem z uruchomieniem gier).
-// Argumenty: --uninstall | --silent | --dir <sciezka> | --files-only | --create-flag <plik> (wewnetrzny)
+// Installer: Steam Mic Auto (toggles "Record Microphone" in Steam Game Recording while listed games run).
+// Arguments: --uninstall | --silent | --dir <path> | --files-only | --create-flag <file> (internal)
 static class Program
 {
     const string StartupFileName = "SteamMicAuto.vbs";
@@ -20,12 +20,12 @@ static class Program
     static bool silent;
 
     static readonly string DefaultGames =
-        "# Lista procesow gier, przy ktorych ma sie wlaczac nagrywanie mikrofonu w Steam Game Recording.\r\n" +
-        "# Jedna nazwa procesu na linie, BEZ .exe. Linie zaczynajace sie od # sa ignorowane.\r\n" +
+        "# Process names of games during which Steam Game Recording should record the microphone.\r\n" +
+        "# One process name per line, WITHOUT .exe. Lines starting with # are ignored.\r\n" +
         "#\r\n" +
-        "# Jak znalezc nazwe procesu: uruchom gre -> Menedzer zadan (Ctrl+Shift+Esc) -> zakladka\r\n" +
-        "# \"Szczegoly\" -> skopiuj nazwe z kolumny \"Nazwa\" bez .exe\r\n" +
-        "# Zmiany sa wczytywane na biezaco - nie trzeba restartowac.\r\n" +
+        "# How to find a process name: start the game -> Task Manager (Ctrl+Shift+Esc) -> \"Details\" tab\r\n" +
+        "# -> copy the value from the \"Name\" column without .exe\r\n" +
+        "# Changes are picked up automatically - no restart needed.\r\n" +
         "\r\n" +
         "Phasmophobia\r\n";
 
@@ -53,13 +53,13 @@ static class Program
             ? Path.GetFullPath(dirArg)
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamMicAuto");
 
-        Console.Title = "Steam Mic Auto - " + (uninstall ? "odinstalowanie" : "instalacja");
+        Console.Title = "Steam Mic Auto - " + (uninstall ? "uninstall" : "setup");
         int code;
         try { code = uninstall ? Uninstall(installDir) : Install(installDir, filesOnly); }
         catch (Exception ex)
         {
             Console.WriteLine();
-            Console.WriteLine("BLAD: " + ex.Message);
+            Console.WriteLine("ERROR: " + ex.Message);
             code = 1;
         }
         Pause();
@@ -68,50 +68,50 @@ static class Program
 
     static int Install(string installDir, bool filesOnly)
     {
-        Console.WriteLine("=== Steam Mic Auto - instalacja ===");
+        Console.WriteLine("=== Steam Mic Auto - setup ===");
         Console.WriteLine();
 
         string steamDir = FindSteamDir();
         if (steamDir == null)
         {
-            Console.WriteLine("[X] Nie znaleziono Steama (steam.exe). Zainstaluj Steam i uruchom ten program ponownie.");
+            Console.WriteLine("[X] Steam (steam.exe) not found. Install Steam and run this program again.");
             return 1;
         }
-        Console.WriteLine("[OK] Steam:            " + steamDir);
-        Console.WriteLine("[OK] Folder instalacji: " + installDir);
+        Console.WriteLine("[OK] Steam:          " + steamDir);
+        Console.WriteLine("[OK] Install folder: " + installDir);
 
         Directory.CreateDirectory(installDir);
         ExtractResource("payload.mic-watcher.ps1", Path.Combine(installDir, WatcherScript));
         ExtractResource("payload.steam-recording-mic.ps1", Path.Combine(installDir, "steam-recording-mic.ps1"));
         string gamesPath = Path.Combine(installDir, "games.txt");
         if (!File.Exists(gamesPath)) File.WriteAllText(gamesPath, DefaultGames, new UTF8Encoding(false));
-        Console.WriteLine("[OK] Skrypty zapisane (lista gier: " + gamesPath + ")");
+        Console.WriteLine("[OK] Scripts installed (game list: " + gamesPath + ")");
 
         string flagPath = Path.Combine(steamDir, FlagFileName);
         if (!EnsureFlag(flagPath))
         {
-            Console.WriteLine("[X] Nie udalo sie utworzyc pliku " + flagPath);
-            Console.WriteLine("    Utworz go recznie (pusty plik) i uruchom program ponownie.");
+            Console.WriteLine("[X] Could not create " + flagPath);
+            Console.WriteLine("    Create an empty file with that name manually and run this program again.");
             return 1;
         }
-        Console.WriteLine("[OK] Zdalne debugowanie Steama wlaczone (plik flagi)");
+        Console.WriteLine("[OK] Steam remote debugging enabled (flag file)");
 
         if (filesOnly)
         {
             Console.WriteLine();
-            Console.WriteLine("Tryb --files-only: pominieto autostart, zatrzymywanie starych procesow i uruchomienie.");
+            Console.WriteLine("--files-only mode: skipped autostart, stopping old processes and launching.");
             return 0;
         }
 
         int killed = StopWatchers();
-        if (killed > 0) Console.WriteLine("[OK] Zatrzymano poprzednie uruchomione watchery: " + killed);
+        if (killed > 0) Console.WriteLine("[OK] Stopped previously running watchers: " + killed);
 
         string startupDir = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
         string legacy = Path.Combine(startupDir, LegacyStartupFileName);
         if (File.Exists(legacy) && File.ReadAllText(legacy).IndexOf(WatcherScript, StringComparison.OrdinalIgnoreCase) >= 0)
         {
             File.Delete(legacy);
-            Console.WriteLine("[OK] Usunieto stary wpis autostartu (" + LegacyStartupFileName + ") - zastapiony nowym");
+            Console.WriteLine("[OK] Removed old autostart entry (" + LegacyStartupFileName + ") - replaced by the new one");
         }
 
         string startupFile = Path.Combine(startupDir, StartupFileName);
@@ -120,53 +120,53 @@ static class Program
             "Set sh = CreateObject(\"WScript.Shell\")\r\n" +
             "sh.Run \"powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"\"" + ps1 + "\"\"\", 0, False\r\n",
             Encoding.ASCII);
-        Console.WriteLine("[OK] Autostart dodany: " + startupFile);
+        Console.WriteLine("[OK] Autostart added: " + startupFile);
 
         Process.Start(new ProcessStartInfo("wscript.exe", "\"" + startupFile + "\"") { UseShellExecute = false });
-        Console.WriteLine("[OK] Watcher uruchomiony w tle");
+        Console.WriteLine("[OK] Watcher started in the background");
 
         Console.WriteLine();
         EnsureSteamDebugPort(steamDir);
 
         Console.WriteLine();
-        Console.WriteLine("Gotowe. Sprawdz liste gier: " + gamesPath);
-        if (Ask("Otworzyc liste gier w Notatniku?", true))
+        Console.WriteLine("Done. Check your game list: " + gamesPath);
+        if (Ask("Open the game list in Notepad?", true))
             Process.Start(new ProcessStartInfo("notepad.exe", "\"" + gamesPath + "\"") { UseShellExecute = false });
         return 0;
     }
 
     static int Uninstall(string installDir)
     {
-        Console.WriteLine("=== Steam Mic Auto - odinstalowanie ===");
+        Console.WriteLine("=== Steam Mic Auto - uninstall ===");
         Console.WriteLine();
 
         int killed = StopWatchers();
-        Console.WriteLine("[OK] Zatrzymano watchery: " + killed);
+        Console.WriteLine("[OK] Stopped watchers: " + killed);
 
         string startupFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), StartupFileName);
-        if (File.Exists(startupFile)) { File.Delete(startupFile); Console.WriteLine("[OK] Usunieto autostart"); }
+        if (File.Exists(startupFile)) { File.Delete(startupFile); Console.WriteLine("[OK] Removed autostart entry"); }
 
         if (Directory.Exists(installDir))
         {
-            try { Directory.Delete(installDir, true); Console.WriteLine("[OK] Usunieto folder " + installDir); }
-            catch (Exception ex) { Console.WriteLine("[!] Nie udalo sie usunac " + installDir + ": " + ex.Message); }
+            try { Directory.Delete(installDir, true); Console.WriteLine("[OK] Removed folder " + installDir); }
+            catch (Exception ex) { Console.WriteLine("[!] Could not remove " + installDir + ": " + ex.Message); }
         }
 
         string steamDir = FindSteamDir();
         if (steamDir != null)
         {
             string flagPath = Path.Combine(steamDir, FlagFileName);
-            if (File.Exists(flagPath) && Ask("Wylaczyc tez zdalne debugowanie Steama (usunac plik flagi)?", true))
+            if (File.Exists(flagPath) && Ask("Also disable Steam remote debugging (delete the flag file)?", true))
             {
-                try { File.Delete(flagPath); Console.WriteLine("[OK] Usunieto plik flagi (zadziala po restarcie Steama)"); }
+                try { File.Delete(flagPath); Console.WriteLine("[OK] Removed flag file (takes effect after a Steam restart)"); }
                 catch (UnauthorizedAccessException)
                 {
-                    Console.WriteLine("[!] Brak uprawnien - usun recznie: " + flagPath);
+                    Console.WriteLine("[!] Access denied - delete it manually: " + flagPath);
                 }
             }
         }
         Console.WriteLine();
-        Console.WriteLine("Uwaga: przelacznik Record Microphone w Steamie zostaje w ostatnio ustawionym stanie.");
+        Console.WriteLine("Note: the Record Microphone toggle in Steam stays in whatever state it was last set to.");
         return 0;
     }
 
@@ -177,7 +177,7 @@ static class Program
         catch (UnauthorizedAccessException) { }
         catch (IOException) { }
 
-        Console.WriteLine("[..] Folder Steama wymaga uprawnien administratora - potwierdz okno UAC");
+        Console.WriteLine("[..] The Steam folder needs administrator rights - please confirm the UAC prompt");
         try
         {
             var psi = new ProcessStartInfo(Assembly.GetExecutingAssembly().Location, "--create-flag \"" + flagPath + "\"");
@@ -193,36 +193,36 @@ static class Program
     {
         if (DebugPortUp())
         {
-            Console.WriteLine("[OK] Steam odpowiada na porcie debugowania - wszystko dziala.");
+            Console.WriteLine("[OK] Steam is answering on the debug port - everything works.");
             return;
         }
 
         Process[] steam = Process.GetProcessesByName("steam");
         if (steam.Length == 0)
         {
-            Console.WriteLine("[i] Steam nie jest uruchomiony. Uruchom go - port debugowania wlaczy sie automatycznie.");
+            Console.WriteLine("[i] Steam is not running. Start it - the debug port will be enabled automatically.");
             return;
         }
 
-        Console.WriteLine("[!] Steam dziala, ale zostal uruchomiony zanim wlaczono debugowanie - wymaga restartu.");
-        if (!Ask("Zrestartowac Steam teraz? (zamknie tez uruchomione gry i overlay)", false))
+        Console.WriteLine("[!] Steam is running but was started before debugging was enabled - it needs a restart.");
+        if (!Ask("Restart Steam now? (this also closes running games and the overlay)", false))
         {
-            Console.WriteLine("[i] Zrestartuj Steam recznie (Steam -> Wyjdz, potem uruchom ponownie).");
+            Console.WriteLine("[i] Restart Steam manually (Steam -> Exit, then start it again).");
             return;
         }
 
         string steamExe = Path.Combine(steamDir, "steam.exe");
         Process.Start(new ProcessStartInfo(steamExe, "-shutdown") { UseShellExecute = false });
-        Console.Write("[..] Zamykanie Steama");
+        Console.Write("[..] Shutting down Steam");
         for (int i = 0; i < 90 && Process.GetProcessesByName("steam").Length > 0; i++) { Thread.Sleep(500); Console.Write("."); }
         Console.WriteLine();
         Process.Start(new ProcessStartInfo(steamExe) { UseShellExecute = false });
-        Console.Write("[..] Uruchamianie Steama");
+        Console.Write("[..] Starting Steam");
         for (int i = 0; i < 120 && !DebugPortUp(); i++) { Thread.Sleep(1000); Console.Write("."); }
         Console.WriteLine();
         Console.WriteLine(DebugPortUp()
-            ? "[OK] Steam odpowiada na porcie debugowania - wszystko dziala."
-            : "[!] Steam jeszcze nie odpowiada na porcie 8080 - poczekaj az w pelni sie uruchomi.");
+            ? "[OK] Steam is answering on the debug port - everything works."
+            : "[!] Steam is not answering on port 8080 yet - wait until it has fully started.");
     }
 
     static bool DebugPortUp()
@@ -293,7 +293,7 @@ static class Program
     {
         using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream(name))
         {
-            if (s == null) throw new InvalidOperationException("Brak zasobu w setup.exe: " + name);
+            if (s == null) throw new InvalidOperationException("Missing resource in setup.exe: " + name);
             using (FileStream f = File.Create(destination)) s.CopyTo(f);
         }
     }
@@ -301,18 +301,18 @@ static class Program
     static bool Ask(string question, bool defaultYes)
     {
         if (silent || Console.IsInputRedirected) return false;
-        Console.Write(question + (defaultYes ? " [T/n] " : " [t/N] "));
+        Console.Write(question + (defaultYes ? " [Y/n] " : " [y/N] "));
         ConsoleKeyInfo key = Console.ReadKey();
         Console.WriteLine();
         if (key.Key == ConsoleKey.Enter) return defaultYes;
-        return key.KeyChar == 't' || key.KeyChar == 'T' || key.KeyChar == 'y' || key.KeyChar == 'Y';
+        return key.KeyChar == 'y' || key.KeyChar == 'Y';
     }
 
     static void Pause()
     {
         if (silent || Console.IsInputRedirected) return;
         Console.WriteLine();
-        Console.Write("Nacisnij dowolny klawisz, aby zamknac...");
+        Console.Write("Press any key to close...");
         Console.ReadKey(true);
     }
 }

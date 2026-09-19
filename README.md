@@ -1,80 +1,82 @@
 # Steam Mic Auto
 
-Automatycznie włącza i wyłącza **Record Microphone** w Steam Game Recording, zależnie od tego, czy działa jedna z Twoich gier (np. Phasmophobia, gry kooperacyjne).
+**English** | [Polski](README.pl.md)
 
-Steam ma tylko jeden globalny przełącznik nagrywania mikrofonu (Ustawienia → Game Recording → Audio Recording), bez ustawienia per gra i bez skrótu klawiszowego. To narzędzie przełącza go za Ciebie: mikrofon trafia do klipów tylko podczas gier z Twojej listy. Nie rusza mikrofonu w Windows ani innych programów (Discord, Voicemod itd.).
+Automatically turns **Record Microphone** in Steam Game Recording on and off, depending on whether one of your games is running (e.g. Phasmophobia, co-op games).
 
-## Wymagania
+Steam only has one global toggle for recording the microphone (Settings → Game Recording → Audio Recording): no per-game setting and no hotkey. This tool flips it for you, so your microphone ends up in clips only during the games on your list. It does not touch the Windows microphone or other programs (Discord, Voicemod, etc.).
 
-- Windows 10/11 (PowerShell 5.1 jest wbudowany)
-- Steam z włączonym Game Recording
-- **Steam w języku angielskim** (skrypt rozpoznaje zakładkę "Game Recording" i przełącznik "Record Microphone" po angielskich nazwach)
+## Requirements
 
-## Instalacja
+- Windows 10/11 (PowerShell 5.1 is built in)
+- Steam with Game Recording enabled
+- **Steam set to English** (the script recognizes the "Game Recording" tab and the "Record Microphone" toggle by their English names)
 
-1. Pobierz `setup/setup.exe` (lub z zakładki Releases) i uruchom.
-2. Instalator sam:
-   - znajdzie Steama,
-   - włączy w nim zdalne debugowanie (pusty plik `.cef-enable-remote-debugging` w folderze Steama; jeśli potrzeba uprawnień, pojawi się okno UAC),
-   - zainstaluje skrypty do `%LOCALAPPDATA%\SteamMicAuto`,
-   - doda autostart (folder Uruchamianie) i od razu uruchomi program w tle,
-   - zapyta o restart Steama, jeśli działał bez włączonego debugowania (bez restartu nie będzie działać).
-3. Dopisz swoje gry do `%LOCALAPPDATA%\SteamMicAuto\games.txt` (instalator proponuje otwarcie pliku).
+## Installation
 
-### Lista gier
+1. Download `setup.exe` from [Releases](../../releases) (or `setup/setup.exe`) and run it.
+2. The installer automatically:
+   - finds Steam,
+   - enables remote debugging in it (an empty `.cef-enable-remote-debugging` file in the Steam folder; a UAC prompt appears if admin rights are needed),
+   - installs the scripts to `%LOCALAPPDATA%\SteamMicAuto`,
+   - adds autostart (Startup folder) and starts the program in the background,
+   - offers to restart Steam if it was running without debugging enabled (it will not work without a restart).
+3. Add your games to `%LOCALAPPDATA%\SteamMicAuto\games.txt` (the installer offers to open the file).
 
-Jedna nazwa procesu na linię, **bez `.exe`**. Zmiany są wczytywane na bieżąco.
+### Game list
 
-Nazwę procesu znajdziesz tak: uruchom grę → Menedżer zadań (Ctrl+Shift+Esc) → zakładka "Szczegóły" → kolumna "Nazwa".
+One process name per line, **without `.exe`**. Changes are picked up automatically.
+
+To find a process name: start the game → Task Manager (Ctrl+Shift+Esc) → "Details" tab → "Name" column.
 
 ```
 Phasmophobia
 ```
 
-### Odinstalowanie
+### Uninstall
 
 ```
 setup.exe --uninstall
 ```
 
-Zatrzymuje program, usuwa autostart i pliki, a na pytanie może też wyłączyć zdalne debugowanie Steama (przełącznik Record Microphone zostaje w ostatnim stanie).
+Stops the program, removes autostart and the files, and can optionally disable Steam remote debugging too (the Record Microphone toggle stays in its last state).
 
-Inne argumenty: `--silent` (bez pytań), `--dir <ścieżka>` (inny folder instalacji), `--files-only` (tylko wypakuj pliki, bez autostartu i uruchamiania).
+Other arguments: `--silent` (no prompts), `--dir <path>` (different install folder), `--files-only` (only extract files, no autostart or launch).
 
-## Jak to działa
+## How it works
 
-1. Program w PowerShellu (`mic-watcher.ps1`) co 3 sekundy sprawdza, czy działa proces z `games.txt`.
-2. Gdy stan się zmienia, przez Chrome DevTools Protocol (`127.0.0.1:8080`) otwiera na chwilę okno Ustawień Steama, przechodzi do Game Recording, przełącza "Record Microphone" i zamyka okno.
-3. Jeśli Steam nie działa, ponawia próbę po kilku sekundach.
+1. A PowerShell program (`mic-watcher.ps1`) checks every 3 seconds whether a process from `games.txt` is running.
+2. When the state changes, it uses the Chrome DevTools Protocol (`127.0.0.1:8080`) to briefly open Steam's Settings window, go to Game Recording, flip "Record Microphone", and close the window.
+3. If Steam is not running, it retries after a few seconds.
 
 Log: `%LOCALAPPDATA%\SteamMicAuto\mic-watcher.log`
 
-## Uwagi i ograniczenia
+## Notes and limitations
 
-- **Bezpieczeństwo:** włączone zdalne debugowanie oznacza, że każdy program na Twoim komputerze może sterować klientem Steam przez lokalny port 8080. Port nie jest dostępny z sieci, ale jeśli Ci to nie odpowiada, nie instaluj albo odinstaluj (usuwa plik flagi).
-- W momencie startu gry okno Ustawień Steama może na 1-2 sekundy pojawić się na wierzchu.
-- Program steruje interfejsem Steama, więc duża zmiana wyglądu Ustawień w aktualizacji Steama może go zepsuć.
-- `setup.exe` nie jest podpisany cyfrowo, więc SmartScreen lub antywirus mogą wyświetlić ostrzeżenie. Kod źródłowy jest w `setup/src`, możesz zbudować go sam.
+- **Security:** with remote debugging enabled, any program on your computer can control the Steam client through the local port 8080. The port is not reachable from the network, but if you are not comfortable with that, do not install this or uninstall it (that removes the flag file).
+- When a game starts, the Steam Settings window may flash on top for 1-2 seconds.
+- The program drives Steam's UI, so a major redesign of the Settings pages in a Steam update may break it.
+- `setup.exe` is not code-signed, so SmartScreen or your antivirus may show a warning. The source is in `setup/src`, so you can build it yourself.
 
-## Budowanie ze źródeł
+## Building from source
 
-Potrzebny jest tylko Windows (używa kompilatora C# wbudowanego w system):
+You only need Windows (it uses the C# compiler built into the OS):
 
 ```
 powershell -ExecutionPolicy Bypass -File setup\src\build.ps1
 ```
 
-Powstaje `setup\setup.exe` z osadzonymi skryptami z `setup\src\payload`.
+This produces `setup\setup.exe` with the scripts from `setup\src\payload` embedded.
 
-## Struktura
+## Layout
 
 ```
 setup/
-  setup.exe            instalator
+  setup.exe            installer
   src/
-    Setup.cs           kod instalatora
-    build.ps1          budowanie setup.exe
+    Setup.cs           installer source
+    build.ps1          builds setup.exe
     payload/
-      mic-watcher.ps1          pętla wykrywająca gry
-      steam-recording-mic.ps1  sterowanie przełącznikiem w Steamie
+      mic-watcher.ps1          game-detection loop
+      steam-recording-mic.ps1  controls the toggle in Steam
 ```

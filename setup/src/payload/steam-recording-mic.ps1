@@ -1,7 +1,7 @@
-# Sterowanie przelacznikiem "Record Microphone" (Steam -> Ustawienia -> Game Recording)
-# przez wbudowana przegladarke Steama (Chrome DevTools Protocol, 127.0.0.1:8080).
-# Wymaga pliku "C:\Program Files (x86)\Steam\.cef-enable-remote-debugging" i restartu Steama.
-# Ten plik jest dolaczany (dot-source) przez mic-watcher.ps1.
+# Controls the "Record Microphone" toggle (Steam -> Settings -> Game Recording)
+# through Steam's embedded browser (Chrome DevTools Protocol, 127.0.0.1:8080).
+# Requires the file ".cef-enable-remote-debugging" in the Steam folder and a Steam restart.
+# This file is dot-sourced by mic-watcher.ps1.
 
 Add-Type -Namespace Win32 -Name Native -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -57,7 +57,7 @@ $script:SetMicJs = @'
 })(__WANT__)
 '@
 
-# Zwraca $true gdy przelacznik ma zadany stan po operacji, $false gdy sie nie udalo (np. Steam nie dziala).
+# Returns $true if the toggle has the requested state afterwards, $false on failure (e.g. Steam not running).
 function Set-SteamRecordMic([bool]$Enable) {
     try {
         $wasOpen = [bool](Invoke-SteamCdp 'Steam Settings' '1')

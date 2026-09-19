@@ -1,6 +1,6 @@
-# Wlacza "Record Microphone" w Steam Game Recording, gdy dziala gra z games.txt,
-# i wylacza go, gdy zadnej z nich nie ma. Nie rusza mikrofonu w Windows ani Discorda.
-# Dziala w petli w tle (autostart przez folder Uruchamianie - mic-watcher-uruchom.vbs).
+# Turns "Record Microphone" in Steam Game Recording ON while a game from games.txt is running
+# and OFF when none is. Does not touch the Windows microphone or Discord.
+# Runs in a loop in the background (autostart via the Startup folder, see setup.exe).
 
 $ErrorActionPreference = 'SilentlyContinue'
 
@@ -21,9 +21,9 @@ function Write-Log([string]$message) {
     }
 }
 
-Write-Log "=== mic-watcher wystartowal (sterowanie: Steam Record Microphone) ==="
+Write-Log "=== mic-watcher started (controlling: Steam Record Microphone) ==="
 
-$applied = $null      # ostatni stan, ktory udalo sie ustawic w Steamie
+$applied = $null      # last state successfully applied in Steam
 $failLogged = $false
 
 while ($true) {
@@ -45,11 +45,11 @@ while ($true) {
         if (Set-SteamRecordMic $desired) {
             $applied = $desired
             $failLogged = $false
-            if ($desired) { Write-Log "Wykryto gre '$matchedName' -> Record Microphone: WLACZONE" }
-            else          { Write-Log "Brak gry z listy -> Record Microphone: WYLACZONE" }
+            if ($desired) { Write-Log "Detected game '$matchedName' -> Record Microphone: ON" }
+            else          { Write-Log "No listed game running -> Record Microphone: OFF" }
         }
         elseif (-not $failLogged) {
-            Write-Log "Nie udalo sie ustawic Record Microphone (Steam nie dziala lub port 8080 wylaczony) - ponawiam"
+            Write-Log "Could not set Record Microphone (Steam not running or debug port 8080 disabled) - retrying"
             $failLogged = $true
         }
         if ($desired -ne $applied) { Start-Sleep -Seconds 12 }

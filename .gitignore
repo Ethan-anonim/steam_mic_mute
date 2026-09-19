@@ -1,9 +1,9 @@
-# logi i kopie zapasowe
+# logs and backups
 *.log
 *.backup*
 
-# stara wersja robocza z glownego folderu (sciezki na sztywno, przestarzale zadanie harmonogramu);
-# aktualne skrypty sa w setup/src/payload
+# old working copies from the project root (hardcoded paths, obsolete scheduled task);
+# the current scripts live in setup/src/payload
 /mic-watcher.ps1
 /steam-recording-mic.ps1
 /games.txt
