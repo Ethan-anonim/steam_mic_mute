@@ -14,7 +14,7 @@ using Microsoft.Win32;
 // The installer copies itself to <install folder>\uninstall.exe; a copy named uninstall*.exe always runs in uninstall mode.
 static class Program
 {
-    const string Version = "1.2.0";
+    const string Version = "1.2.1";
     const string StartupFileName = "SteamMicAuto.vbs";
     const string LegacyStartupFileName = "mic-watcher-uruchom.vbs";
     const string FlagFileName = ".cef-enable-remote-debugging";
@@ -25,8 +25,13 @@ static class Program
     const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\SteamMicAuto";
     const string ProjectUrl = "https://github.com/Ethan-anonim/steam_mic_mute";
 
+    // Files created by the installer inside the install folder. The uninstaller removes only these,
+    // never the whole folder contents, so running a downloaded uninstall.exe elsewhere is harmless.
+    static readonly string[] OwnFiles = { "mic-watcher.ps1", "steam-recording-mic.ps1", "games.txt", "mic-watcher.log", "uninstall.exe" };
+
     static bool silent;
     static string pendingDeleteDir;
+    static string pendingDeleteFile;
 
     static readonly string DefaultGames =
         "# Process names of games during which Steam Game Recording should record the microphone.\r\n" +
@@ -71,8 +76,8 @@ static class Program
 
         string installDir;
         if (dirArg != null) installDir = Path.GetFullPath(dirArg);
-        else if (runAsUninstaller) installDir = Path.GetDirectoryName(exePath);
-        else installDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamMicAuto");
+        else if (uninstall) installDir = ResolveUninstallDir(exePath);
+        else installDir = DefaultInstallDir();
 
         Console.Title = "Steam Mic Auto - " + (uninstall ? "uninstall" : "setup");
         int code;
@@ -84,8 +89,32 @@ static class Program
             code = 1;
         }
         Pause();
-        if (pendingDeleteDir != null) DeleteFolderAfterExit(pendingDeleteDir);
+        if (pendingDeleteDir != null) DeleteSelfAfterExit(pendingDeleteFile, pendingDeleteDir);
         return code;
+    }
+
+    static string DefaultInstallDir()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamMicAuto");
+    }
+
+    // Where the program is installed: the Apps entry, else the folder of this exe if it holds the
+    // program's files, else the default location. A downloaded uninstall.exe never treats its own
+    // (e.g. Downloads) folder as the install folder.
+    static string ResolveUninstallDir(string exePath)
+    {
+        try
+        {
+            using (RegistryKey k = Registry.CurrentUser.OpenSubKey(UninstallKeyPath))
+            {
+                string loc = k == null ? null : k.GetValue("InstallLocation") as string;
+                if (!string.IsNullOrEmpty(loc) && Directory.Exists(loc)) return loc;
+            }
+        }
+        catch { }
+        string here = Path.GetDirectoryName(exePath);
+        if (File.Exists(Path.Combine(here, WatcherScript))) return here;
+        return DefaultInstallDir();
     }
 
     static int Install(string installDir, string gamesDirArg, bool filesOnly)
@@ -214,7 +243,11 @@ static class Program
         }
         catch { }
 
-        if (gamesPath != null && File.Exists(gamesPath) && !IsInside(gamesPath, installDir))
+        if (gamesPath != null && File.Exists(gamesPath) && IsInside(gamesPath, installDir))
+        {
+            try { File.Delete(gamesPath); } catch { }
+        }
+        else if (gamesPath != null && File.Exists(gamesPath))
         {
             if (purge || (interactive && Ask("Also delete your game list (" + gamesPath + ")?", true)))
             {
@@ -271,31 +304,39 @@ static class Program
         }
     }
 
-    // The running uninstaller lives inside the install folder, so it deletes everything else now
-    // and asks a detached cmd.exe to remove the folder (and this exe) right after the process exits.
+    // Deletes only the files the installer created. If this uninstaller lives inside the folder, it asks a
+    // detached cmd.exe to remove the exe and the (then empty) folder right after the process exits.
+    // A folder that still contains other files is never wiped.
     static void RemoveInstallDir(string installDir)
     {
         string self = Assembly.GetExecutingAssembly().Location;
-        if (!IsInside(self, installDir))
+        bool selfInside = IsInside(self, installDir);
+
+        foreach (string name in OwnFiles)
         {
-            try { Directory.Delete(installDir, true); Console.WriteLine("[OK] Removed folder " + installDir); }
-            catch (Exception ex) { Console.WriteLine("[!] Could not remove " + installDir + ": " + ex.Message); }
+            string f = Path.Combine(installDir, name);
+            if (File.Exists(f) && !(selfInside && SamePath(f, self)))
+                try { File.Delete(f); } catch { }
+        }
+
+        if (selfInside)
+        {
+            pendingDeleteFile = self;
+            pendingDeleteDir = installDir;
+            Console.WriteLine("[OK] Removed program files from " + installDir + " (the uninstaller and the folder disappear right after this window closes)");
             return;
         }
 
-        foreach (string f in Directory.GetFiles(installDir))
-            if (!SamePath(f, self)) { try { File.Delete(f); } catch { } }
-        foreach (string d in Directory.GetDirectories(installDir))
-            try { Directory.Delete(d, true); } catch { }
-        pendingDeleteDir = installDir;
-        Console.WriteLine("[OK] Removed files from " + installDir + " (the folder disappears right after this window closes)");
+        try { Directory.Delete(installDir); Console.WriteLine("[OK] Removed folder " + installDir); }
+        catch (IOException) { Console.WriteLine("[i] Removed program files; the folder was left in place because it contains other files: " + installDir); }
+        catch (Exception ex) { Console.WriteLine("[!] Could not remove " + installDir + ": " + ex.Message); }
     }
 
-    static void DeleteFolderAfterExit(string dir)
+    static void DeleteSelfAfterExit(string file, string dir)
     {
         try
         {
-            var psi = new ProcessStartInfo("cmd.exe", "/c ping 127.0.0.1 -n 3 >nul & rmdir /s /q \"" + dir + "\"");
+            var psi = new ProcessStartInfo("cmd.exe", "/c ping 127.0.0.1 -n 3 >nul & del /f /q \"" + file + "\" & rmdir \"" + dir + "\"");
             psi.CreateNoWindow = true;
             psi.UseShellExecute = false;
             psi.WindowStyle = ProcessWindowStyle.Hidden;

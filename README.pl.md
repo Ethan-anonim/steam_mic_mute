@@ -41,7 +41,7 @@ Phasmophobia
 
 Instalator dodaje Steam Mic Auto do **Ustawienia Windows → Aplikacje**, więc możesz odinstalować program także stamtąd (albo przez `setup.exe --uninstall`). Uninstaller zatrzymuje program i usuwa wszystko z nim związane: autostart, wpis w Aplikacjach, folder instalacji (razem z samym uninstallerem) oraz, jeśli się zgodzisz, Twoją listę gier i plik flagi zdalnego debugowania Steama. Przełącznik Record Microphone zostaje w ostatnim stanie.
 
-`uninstall.exe --purge` usuwa absolutnie wszystko bez pytań (razem z listą gier i plikiem flagi). Przy `--silent` bez `--purge` lista gier poza folderem instalacji i plik flagi zostają na miejscu.
+`uninstall.exe` jest też dostępny jako osobny plik do pobrania na stronie [Releases](../../releases). Sam znajduje instalację i usuwa tylko pliki utworzone przez instalator, nigdy innych plików z folderu, w którym leży. `uninstall.exe --purge` usuwa absolutnie wszystko bez pytań (razem z listą gier i plikiem flagi). Przy `--silent` bez `--purge` lista gier poza folderem instalacji i plik flagi zostają na miejscu.
 
 Inne argumenty: `--silent` (bez pytań), `--dir <ścieżka>` (inny folder instalacji), `--games-dir <folder lub plik .txt>` (miejsce listy gier, pomija pytanie), `--files-only` (tylko wypakuj pliki, bez autostartu i uruchamiania).
 
@@ -75,6 +75,7 @@ Powstaje `setup\setup.exe` z osadzonymi skryptami z `setup\src\payload`.
 ```
 setup/
   setup.exe            instalator
+  uninstall.exe        ten sam program; pod tą nazwą działa jako uninstaller
   src/
     Setup.cs           kod instalatora
     build.ps1          budowanie setup.exe
