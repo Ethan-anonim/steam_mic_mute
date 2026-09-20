@@ -36,12 +36,12 @@ Phasmophobia
 ### Odinstalowanie
 
 ```
-setup.exe --uninstall
+%LOCALAPPDATA%\SteamMicAuto\uninstall.exe
 ```
 
-Zatrzymuje program, usuwa autostart i pliki, a na pytanie może też wyłączyć zdalne debugowanie Steama (przełącznik Record Microphone zostaje w ostatnim stanie).
+Instalator dodaje Steam Mic Auto do **Ustawienia Windows → Aplikacje**, więc możesz odinstalować program także stamtąd (albo przez `setup.exe --uninstall`). Uninstaller zatrzymuje program i usuwa wszystko z nim związane: autostart, wpis w Aplikacjach, folder instalacji (razem z samym uninstallerem) oraz, jeśli się zgodzisz, Twoją listę gier i plik flagi zdalnego debugowania Steama. Przełącznik Record Microphone zostaje w ostatnim stanie.
 
-Lista gier zostaje na miejscu, jeśli leży poza folderem instalacji.
+`uninstall.exe --purge` usuwa absolutnie wszystko bez pytań (razem z listą gier i plikiem flagi). Przy `--silent` bez `--purge` lista gier poza folderem instalacji i plik flagi zostają na miejscu.
 
 Inne argumenty: `--silent` (bez pytań), `--dir <ścieżka>` (inny folder instalacji), `--games-dir <folder lub plik .txt>` (miejsce listy gier, pomija pytanie), `--files-only` (tylko wypakuj pliki, bez autostartu i uruchamiania).
 

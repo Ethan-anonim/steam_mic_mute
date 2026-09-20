@@ -8,18 +8,25 @@ using System.Text;
 using System.Threading;
 using Microsoft.Win32;
 
-// Installer: Steam Mic Auto (toggles "Record Microphone" in Steam Game Recording while listed games run).
-// Arguments: --uninstall | --silent | --dir <path> | --games-dir <folder or .txt file> | --files-only | --create-flag <file> (internal)
+// Installer + uninstaller: Steam Mic Auto (toggles "Record Microphone" in Steam Game Recording while listed games run).
+// Arguments: --uninstall | --purge | --silent | --dir <path> | --games-dir <folder or .txt file> | --files-only
+//            --create-flag <file> / --delete-flag <file> (internal, used to get admin rights for the Steam folder)
+// The installer copies itself to <install folder>\uninstall.exe; a copy named uninstall*.exe always runs in uninstall mode.
 static class Program
 {
+    const string Version = "1.2.0";
     const string StartupFileName = "SteamMicAuto.vbs";
     const string LegacyStartupFileName = "mic-watcher-uruchom.vbs";
     const string FlagFileName = ".cef-enable-remote-debugging";
     const string WatcherScript = "mic-watcher.ps1";
     const string GamesFileName = "games.txt";
     const string GamesArgMarker = "-GamesFile \"\"";
+    const string UninstallExeName = "uninstall.exe";
+    const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\SteamMicAuto";
+    const string ProjectUrl = "https://github.com/Ethan-anonim/steam_mic_mute";
 
     static bool silent;
+    static string pendingDeleteDir;
 
     static readonly string DefaultGames =
         "# Process names of games during which Steam Game Recording should record the microphone.\r\n" +
@@ -33,17 +40,22 @@ static class Program
 
     static int Main(string[] args)
     {
-        bool uninstall = false, filesOnly = false;
-        string dirArg = null, gamesDirArg = null, createFlag = null;
+        string exePath = Assembly.GetExecutingAssembly().Location;
+        bool runAsUninstaller = Path.GetFileName(exePath).StartsWith("uninstall", StringComparison.OrdinalIgnoreCase);
+
+        bool uninstall = runAsUninstaller, filesOnly = false, purge = false;
+        string dirArg = null, gamesDirArg = null, createFlag = null, deleteFlag = null;
         for (int i = 0; i < args.Length; i++)
         {
             string a = args[i].ToLowerInvariant();
             if (a == "--uninstall") uninstall = true;
+            else if (a == "--purge") { uninstall = true; purge = true; }
             else if (a == "--silent") silent = true;
             else if (a == "--files-only") filesOnly = true;
             else if (a == "--dir" && i + 1 < args.Length) dirArg = args[++i];
             else if (a == "--games-dir" && i + 1 < args.Length) gamesDirArg = args[++i];
             else if (a == "--create-flag" && i + 1 < args.Length) createFlag = args[++i];
+            else if (a == "--delete-flag" && i + 1 < args.Length) deleteFlag = args[++i];
         }
 
         if (createFlag != null)
@@ -51,14 +63,20 @@ static class Program
             try { File.WriteAllText(createFlag, ""); return 0; }
             catch { return 1; }
         }
+        if (deleteFlag != null)
+        {
+            try { File.Delete(deleteFlag); return 0; }
+            catch { return 1; }
+        }
 
-        string installDir = dirArg != null
-            ? Path.GetFullPath(dirArg)
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamMicAuto");
+        string installDir;
+        if (dirArg != null) installDir = Path.GetFullPath(dirArg);
+        else if (runAsUninstaller) installDir = Path.GetDirectoryName(exePath);
+        else installDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SteamMicAuto");
 
         Console.Title = "Steam Mic Auto - " + (uninstall ? "uninstall" : "setup");
         int code;
-        try { code = uninstall ? Uninstall(installDir) : Install(installDir, gamesDirArg, filesOnly); }
+        try { code = uninstall ? Uninstall(installDir, purge) : Install(installDir, gamesDirArg, filesOnly); }
         catch (Exception ex)
         {
             Console.WriteLine();
@@ -66,12 +84,13 @@ static class Program
             code = 1;
         }
         Pause();
+        if (pendingDeleteDir != null) DeleteFolderAfterExit(pendingDeleteDir);
         return code;
     }
 
     static int Install(string installDir, string gamesDirArg, bool filesOnly)
     {
-        Console.WriteLine("=== Steam Mic Auto - setup ===");
+        Console.WriteLine("=== Steam Mic Auto " + Version + " - setup ===");
         Console.WriteLine();
 
         string steamDir = FindSteamDir();
@@ -95,6 +114,11 @@ static class Program
         ExtractResource("payload.steam-recording-mic.ps1", Path.Combine(installDir, "steam-recording-mic.ps1"));
         Console.WriteLine("[OK] Scripts installed");
 
+        string uninstallExe = Path.Combine(installDir, UninstallExeName);
+        string self = Assembly.GetExecutingAssembly().Location;
+        if (!SamePath(self, uninstallExe)) File.Copy(self, uninstallExe, true);
+        Console.WriteLine("[OK] Uninstaller: " + uninstallExe);
+
         PrepareGamesFile(gamesPath, existingGames, Path.Combine(installDir, GamesFileName));
 
         string flagPath = Path.Combine(steamDir, FlagFileName);
@@ -109,7 +133,7 @@ static class Program
         if (filesOnly)
         {
             Console.WriteLine();
-            Console.WriteLine("--files-only mode: skipped autostart, stopping old processes and launching.");
+            Console.WriteLine("--files-only mode: skipped autostart, Windows app entry, stopping old processes and launching.");
             return 0;
         }
 
@@ -131,6 +155,9 @@ static class Program
             Encoding.ASCII);
         Console.WriteLine("[OK] Autostart added: " + startupFile);
 
+        RegisterUninstall(installDir, uninstallExe);
+        Console.WriteLine("[OK] Added to Windows Settings -> Apps (Steam Mic Auto)");
+
         Process.Start(new ProcessStartInfo("wscript.exe", "\"" + startupFile + "\"") { UseShellExecute = false });
         Console.WriteLine("[OK] Watcher started in the background");
 
@@ -139,48 +166,154 @@ static class Program
 
         Console.WriteLine();
         Console.WriteLine("Done. Your game list: " + gamesPath);
+        Console.WriteLine("To remove everything later: Windows Settings -> Apps -> Steam Mic Auto -> Uninstall,");
+        Console.WriteLine("or run " + uninstallExe);
         if (Ask("Open the game list in Notepad?", true))
             Process.Start(new ProcessStartInfo("notepad.exe", "\"" + gamesPath + "\"") { UseShellExecute = false });
         return 0;
     }
 
-    static int Uninstall(string installDir)
+    static int Uninstall(string installDir, bool purge)
     {
         Console.WriteLine("=== Steam Mic Auto - uninstall ===");
         Console.WriteLine();
 
-        string startupFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), StartupFileName);
+        bool interactive = !silent && !Console.IsInputRedirected;
+        if (interactive && !purge && !Ask("Remove Steam Mic Auto and its files?", true))
+        {
+            Console.WriteLine("Cancelled - nothing was removed.");
+            return 0;
+        }
+
+        string startupDir = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+        string startupFile = Path.Combine(startupDir, StartupFileName);
         string gamesPath = FindExistingGamesFile(installDir, startupFile);
 
         int killed = StopWatchers();
         Console.WriteLine("[OK] Stopped watchers: " + killed);
 
         if (File.Exists(startupFile)) { File.Delete(startupFile); Console.WriteLine("[OK] Removed autostart entry"); }
-
-        bool gamesOutside = gamesPath != null && File.Exists(gamesPath) && !IsInside(gamesPath, installDir);
-        if (Directory.Exists(installDir))
+        string legacy = Path.Combine(startupDir, LegacyStartupFileName);
+        if (File.Exists(legacy) && File.ReadAllText(legacy).IndexOf(WatcherScript, StringComparison.OrdinalIgnoreCase) >= 0)
         {
-            try { Directory.Delete(installDir, true); Console.WriteLine("[OK] Removed folder " + installDir); }
-            catch (Exception ex) { Console.WriteLine("[!] Could not remove " + installDir + ": " + ex.Message); }
+            File.Delete(legacy);
+            Console.WriteLine("[OK] Removed old autostart entry (" + LegacyStartupFileName + ")");
         }
-        if (gamesOutside) Console.WriteLine("[i] Your game list was left in place: " + gamesPath);
+
+        try
+        {
+            using (RegistryKey k = Registry.CurrentUser.OpenSubKey(UninstallKeyPath))
+            {
+                if (k != null)
+                {
+                    k.Close();
+                    Registry.CurrentUser.DeleteSubKeyTree(UninstallKeyPath, false);
+                    Console.WriteLine("[OK] Removed from Windows Settings -> Apps");
+                }
+            }
+        }
+        catch { }
+
+        if (gamesPath != null && File.Exists(gamesPath) && !IsInside(gamesPath, installDir))
+        {
+            if (purge || (interactive && Ask("Also delete your game list (" + gamesPath + ")?", true)))
+            {
+                File.Delete(gamesPath);
+                Console.WriteLine("[OK] Deleted game list: " + gamesPath);
+                RemoveIfEmptyAppFolder(Path.GetDirectoryName(gamesPath));
+            }
+            else
+            {
+                Console.WriteLine("[i] Your game list was left in place: " + gamesPath);
+            }
+        }
+
+        if (Directory.Exists(installDir)) RemoveInstallDir(installDir);
 
         string steamDir = FindSteamDir();
         if (steamDir != null)
         {
             string flagPath = Path.Combine(steamDir, FlagFileName);
-            if (File.Exists(flagPath) && Ask("Also disable Steam remote debugging (delete the flag file)?", true))
+            if (File.Exists(flagPath))
             {
-                try { File.Delete(flagPath); Console.WriteLine("[OK] Removed flag file (takes effect after a Steam restart)"); }
-                catch (UnauthorizedAccessException)
+                if (purge || (interactive && Ask("Also disable Steam remote debugging (delete the flag file)?", true)))
                 {
-                    Console.WriteLine("[!] Access denied - delete it manually: " + flagPath);
+                    if (DeleteFlag(flagPath)) Console.WriteLine("[OK] Removed flag file (the debug port closes after a Steam restart)");
+                    else Console.WriteLine("[!] Could not delete " + flagPath + " - delete it manually");
+                }
+                else
+                {
+                    Console.WriteLine("[i] Steam remote debugging flag left in place: " + flagPath);
+                    Console.WriteLine("    (delete it manually or run the uninstaller with --purge)");
                 }
             }
         }
+
         Console.WriteLine();
-        Console.WriteLine("Note: the Record Microphone toggle in Steam stays in whatever state it was last set to.");
+        Console.WriteLine("Done. The Record Microphone toggle in Steam stays in whatever state it was last set to.");
         return 0;
+    }
+
+    static void RegisterUninstall(string installDir, string uninstallExe)
+    {
+        using (RegistryKey k = Registry.CurrentUser.CreateSubKey(UninstallKeyPath))
+        {
+            k.SetValue("DisplayName", "Steam Mic Auto");
+            k.SetValue("DisplayVersion", Version);
+            k.SetValue("InstallLocation", installDir);
+            k.SetValue("DisplayIcon", uninstallExe);
+            k.SetValue("UninstallString", "\"" + uninstallExe + "\" --uninstall");
+            k.SetValue("QuietUninstallString", "\"" + uninstallExe + "\" --uninstall --silent");
+            k.SetValue("URLInfoAbout", ProjectUrl);
+            k.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
+            k.SetValue("NoModify", 1, RegistryValueKind.DWord);
+            k.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+        }
+    }
+
+    // The running uninstaller lives inside the install folder, so it deletes everything else now
+    // and asks a detached cmd.exe to remove the folder (and this exe) right after the process exits.
+    static void RemoveInstallDir(string installDir)
+    {
+        string self = Assembly.GetExecutingAssembly().Location;
+        if (!IsInside(self, installDir))
+        {
+            try { Directory.Delete(installDir, true); Console.WriteLine("[OK] Removed folder " + installDir); }
+            catch (Exception ex) { Console.WriteLine("[!] Could not remove " + installDir + ": " + ex.Message); }
+            return;
+        }
+
+        foreach (string f in Directory.GetFiles(installDir))
+            if (!SamePath(f, self)) { try { File.Delete(f); } catch { } }
+        foreach (string d in Directory.GetDirectories(installDir))
+            try { Directory.Delete(d, true); } catch { }
+        pendingDeleteDir = installDir;
+        Console.WriteLine("[OK] Removed files from " + installDir + " (the folder disappears right after this window closes)");
+    }
+
+    static void DeleteFolderAfterExit(string dir)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("cmd.exe", "/c ping 127.0.0.1 -n 3 >nul & rmdir /s /q \"" + dir + "\"");
+            psi.CreateNoWindow = true;
+            psi.UseShellExecute = false;
+            psi.WindowStyle = ProcessWindowStyle.Hidden;
+            Process.Start(psi);
+        }
+        catch { }
+    }
+
+    static void RemoveIfEmptyAppFolder(string dir)
+    {
+        try
+        {
+            if (dir != null && Directory.Exists(dir) &&
+                string.Equals(Path.GetFileName(dir), "SteamMicAuto", StringComparison.OrdinalIgnoreCase) &&
+                Directory.GetFileSystemEntries(dir).Length == 0)
+                Directory.Delete(dir);
+        }
+        catch { }
     }
 
     // Path of the game list used by a previous install (from the autostart entry, else the default location).
@@ -224,7 +357,7 @@ static class Program
         Console.Write("Choice" + (existing == null ? " [1]" : "") + ": ");
 
         string answer = (Console.ReadLine() ?? "").Trim();
-        if (answer == "" ) return existing ?? docs;
+        if (answer == "") return existing ?? docs;
         if (answer == "1") return docs;
         if (answer == "2") return desktop;
         if (answer == "3") return installDefault;
@@ -281,15 +414,31 @@ static class Program
         catch (IOException) { }
 
         Console.WriteLine("[..] The Steam folder needs administrator rights - please confirm the UAC prompt");
+        RunElevated("--create-flag", flagPath);
+        return File.Exists(flagPath);
+    }
+
+    static bool DeleteFlag(string flagPath)
+    {
+        try { File.Delete(flagPath); return !File.Exists(flagPath); }
+        catch (UnauthorizedAccessException) { }
+        catch (IOException) { }
+
+        Console.WriteLine("[..] The Steam folder needs administrator rights - please confirm the UAC prompt");
+        RunElevated("--delete-flag", flagPath);
+        return !File.Exists(flagPath);
+    }
+
+    static void RunElevated(string option, string path)
+    {
         try
         {
-            var psi = new ProcessStartInfo(Assembly.GetExecutingAssembly().Location, "--create-flag \"" + flagPath + "\"");
+            var psi = new ProcessStartInfo(Assembly.GetExecutingAssembly().Location, option + " \"" + path + "\"");
             psi.Verb = "runas";
             psi.UseShellExecute = true;
             using (Process p = Process.Start(psi)) { p.WaitForExit(); }
         }
         catch { }
-        return File.Exists(flagPath);
     }
 
     static void EnsureSteamDebugPort(string steamDir)

@@ -37,12 +37,12 @@ Phasmophobia
 ### Uninstall
 
 ```
-setup.exe --uninstall
+%LOCALAPPDATA%\SteamMicAuto\uninstall.exe
 ```
 
-Stops the program, removes autostart and the files, and can optionally disable Steam remote debugging too (the Record Microphone toggle stays in its last state).
+The installer adds Steam Mic Auto to **Windows Settings → Apps**, so you can also uninstall it from there (or run `setup.exe --uninstall`). The uninstaller stops the program and removes everything related to it: autostart, the entry in Apps, the install folder (including the uninstaller itself), and, when you agree, your game list and the Steam remote debugging flag file. The Record Microphone toggle stays in its last state.
 
-Your game list is left in place if it is outside the install folder.
+Use `uninstall.exe --purge` to remove absolutely everything without questions (including the game list and the flag file). With `--silent` and no `--purge`, a game list outside the install folder and the flag file are left in place.
 
 Other arguments: `--silent` (no prompts), `--dir <path>` (different install folder), `--games-dir <folder or .txt file>` (game list location, skips the question), `--files-only` (only extract files, no autostart or launch).
 
